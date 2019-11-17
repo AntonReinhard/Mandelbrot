@@ -30,3 +30,23 @@
 *.exe
 *.out
 *.app
+
+# images
+*.png
+
+.vs/
+Debug/
+Mandelbrot/Release/
+Mandelbrot/x64/
+Mandelbrot/Mandelbrot.vcxproj
+Mandelbrot/Mandelbrot.vcxproj.filters
+Mandelbrot/Mandelbrot.vcxproj.user
+PointChooser/PointChooser.vcxproj
+PointChooser/PointChooser.vcxproj.filters
+PointChooser/PointChooser.vcxproj.user
+*.bmp
+PointChooser/Release/
+PointChooser/x64/
+Release/
+*.pgm
+*.sln
