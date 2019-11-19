@@ -1,96 +1,116 @@
-#include "Mandelbrot.h"
-#include "helpers.h"
-
 #include <iostream>
+#include <fstream>
 #include <chrono>
-#include <iomanip>
+#include <vector>
 #include <thread>
-#include <Windows.h>
+#include <atomic>
+#include <mutex>
 
-int main() {
-	const auto start = std::chrono::steady_clock::now();
+std::mutex m;
+std::atomic<int> thread_counter = 0;
 
-	const auto resolution = get_option("What resolution do you want to render in",
-									   { "16k", "8k", "4k", "FullHD" });
+typedef std::vector<unsigned> image_row;
+typedef std::vector<image_row> image_mat;
 
-	
-	uint32_t image_width = 1920;
-	uint32_t image_height = 1080;
-
-	switch(resolution)
-	{
-	case 1:	//16k
-		image_width = 15360;
-		image_height = 8640;
-		break;
-
-	case 2: //8k
-		image_width = 7680;
-		image_height = 4320;
-		break;
-
-	case 3:	//4k
-		image_width = 3840;
-		image_height = 2160;
-		break;
-
-	case 4:	//FullHD
-		image_width = 1920;
-		image_height = 1080;
-		break;
-
-	default:
-		break;
-	}
-
-	const auto filepath = get_string("What filepath should the images be written to");
-
-	const auto zoom_factor = get_double("What zoom factor do you want");
-
-	const auto im_num = get_number("How many frames");
-
-	const uint32_t max_threads = get_number("How many threads");
-
-	long double zoom = 4;
-	long double zoom_x = -1.284001366739858;
-	long double zoom_y = -0.4275712883013326;
-
-	for (uint32_t i = 1; i <= im_num; ++i) {
-		std::stringstream filename;
-		filename << filepath << "/frame" << std::setfill('0') << std::setw(5) << i << ".bmp";
-
-		while (thread_counter >= max_threads) {
-			Sleep(50);
-		}
-
-		++thread_counter;
-		std::thread t(write_frame, zoom_x, zoom_y, zoom, filename.str(), image_width, image_height);
-		t.detach();
-
-		zoom *= zoom_factor;
-		std::cout << "\rFrame: " << i << std::flush;
-	}
-
-	//wait for remaining threads
-	while (thread_counter > 0) {
-		Sleep(50);
-	}
-	
-	const auto end = std::chrono::steady_clock::now();
-	const auto diff = end - start;
-	const auto sec = std::chrono::duration_cast<std::chrono::seconds>(diff).count();
-	const auto msec = std::chrono::duration_cast<std::chrono::milliseconds>(diff).count();
-
-	std::cout << "\nTook: " << sec << "." << msec << "s" << std::endl;
-
-	system("PAUSE");
-
-	return 0;
+constexpr uint32_t GRAYVALUES = 255;
+//constexpr long double GAMMACORRECT = 0.2;
+constexpr uint32_t THRESHOLD = 4;
+constexpr uint32_t NMAX = 255;
+ 
+void createPGM(std::ofstream &img, const uint32_t height, const uint32_t width) {
+   img.open("img.pgm");
+   img << "P2\n"
+       << width << "\n"
+       << height << "\n"
+       << GRAYVALUES << std::endl;
 }
 
-//115 sec
-//112 nach arithmetik
-//5 sec release x64
-//3.39 sec
-//603 sec with 65535 N_MAX
-//422 sec for 25000x22000 with N_MAX = 100
+auto grayValueOfSequence(const double cReal, const double cImag) -> uint32_t {
+   auto z_real = 0.;
+   auto z_imag = 0.;
+   for(uint32_t i = 0; i < NMAX; ++i) {
+      const auto z_im2 = z_imag*z_imag;
+
+      if (z_real * z_real + z_im2 > THRESHOLD) {
+         return i;
+      }
+
+      z_imag = 2 * z_real * z_imag     + cImag;
+      z_real = z_real * z_real - z_im2 + cReal;
+   }
+   return NMAX;
+}
+ 
+void writeRow(image_row *row, const uint32_t width, const double xmin, const double xmax, const double y) {
+   const auto delta_x{(xmax - xmin)/width};
+   auto c_real{xmin};
+   const auto c_imag{y};
+   for (unsigned i = 0; i < width; ++i) {
+      (*row)[i] = grayValueOfSequence(c_real, c_imag);
+      c_real += delta_x;
+   }
+
+   //decrease counter, cause we're done
+	std::lock_guard<std::mutex> lk(m);
+	--thread_counter;
+}
+
+int main() {
+   const auto start = std::chrono::steady_clock::now();
+   
+   const uint32_t w = 2500;
+   const uint32_t h = 2200;
+   
+   image_mat img;
+   img.resize(h);
+   for (auto& i : img) {
+      i.resize(w);
+   }
+
+   const auto xmin = -1.9;
+   const auto xmax = .6;
+   const auto ymin = -1.1;
+   const auto ymax = 1.1;
+
+   const auto delta_y = (ymax - ymin) / h;
+   auto y = ymin;
+
+   for (uint32_t i = 0; i < h; ++i) {
+
+      while (thread_counter >= 6) {
+		}
+
+      ++thread_counter;
+      std::thread t(writeRow, &img[i], w, xmin, xmax, y);
+      t.detach();
+
+      y += delta_y;
+      if (!(i%100))
+         std::cout << "\rRow " << i << " of " << h << "..." << std::flush;
+
+   }
+
+   std::cout << "\rDone.                         " << std::endl;
+
+   const auto end = std::chrono::steady_clock::now();
+   const auto diff = end - start;
+   const auto sec = std::chrono::duration_cast<std::chrono::seconds>(diff).count();
+   const auto msec = std::chrono::duration_cast<std::chrono::milliseconds>(diff).count();
+
+   std::cout << "Took: " << sec << "." << msec << "s" << std::endl;
+
+   std::ofstream image;
+   createPGM(image, h, w);
+
+   for (unsigned row = 0; row < h; ++row) {
+      for (unsigned col = 0; col < w; ++col) {
+         image << img[row][col] << " ";
+      }
+      image << "\n";
+   }
+
+   image.close();
+}
+
+//~2.2 sec for 2.5kx2.2k with NMAX = 255 and 6 thread
+//55 sec for 25kx22k with NMAX = 255 and 6 threads
