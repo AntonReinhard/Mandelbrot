@@ -6,83 +6,89 @@
 #include <cmath>
 #include <condition_variable>
 #include <atomic>
+#include <fstream>
 
-#include "bitmap_image.hpp"
 #include <gmp.h>
+#include <gmpxx.h>
+#include "bitmap_image.hpp"
 
 std::mutex m;
-std::atomic<int> thread_counter = 0;
+std::atomic<int> thread_counter{0};
 
-constexpr uint32_t gThreshold = 4;
-constexpr uint32_t N_MAX = 1024;
+constexpr uint_fast32_t gThreshold = 4;
+constexpr uint_fast32_t N_MAX = 1024;
 
-typedef std::complex<long double> comp;
+rgb_t colors[1000];
 
-void mandelbrot_init()
-{
-	mpf_set_default_prec(128);
+void mandelbrot_init() {
+	mpf_set_default_prec(64);
 }
 
-inline uint32_t gray_value_of_sequence(mpf_t real, mpf_t imag) {
-	mpf_t z_real, z_imag, z_real_square, z_imag_square;
-	mpf_init2(z_real, mpf_get_prec(real));
-	mpf_init2(z_imag, mpf_get_prec(imag));
-	mpf_init2(z_real_square, 64);
-	mpf_init2(z_imag_square, 64);
+void read_colors() {
+	std::ifstream f("colors");
+	for (unsigned i = 0; i < 1000; ++i) {
+		f >> colors[i].red;
+		f >> colors[i].green;
+		f >> colors[i].blue;
+	}
+}
 
-	mpf_t t;
-	mpf_init2(t, 64);
+uint_fast32_t gray_value_of_sequence(const mpf_class& real, const mpf_class& imag) {
+	mpf_class z_real{0, real.get_prec()};
+	mpf_class z_imag{0, imag.get_prec()};
+	
+	mpf_class z_rt{0, real.get_prec()};
 
-	for (uint32_t i = 0; i < N_MAX; ++i) {
-		mpf_mul(z_real_square, z_real, z_real);
-		mpf_mul(z_imag_square, z_imag, z_imag);
-		mpf_add(t, z_real_square, z_imag_square);
-		if (mpf_cmp_ui(t, gThreshold) > 0) {
-			mpf_t z_mag;
-			mpf_init(z_mag);
-			mpf_sqrt(z_mag, t);
-
-			return unsigned(1000.0 * std::log2(1.75 + i - std::log2(std::log2(mpf_get_d(z_mag)))) / std::log2(N_MAX));
+	for (uint_fast32_t i = 0; i < N_MAX; ++i) {
+		if ((z_real.get_d() * z_real.get_d() + z_imag.get_d() * z_imag.get_d()) > gThreshold) {
+			return unsigned(1000.0 * std::log2(1.75 + i - std::log2(std::log2(sqrt((z_real.get_d() * z_real.get_d() + z_imag.get_d() * z_imag.get_d()))))) / std::log2(N_MAX));
 		}
 
-		// z = z * z + c;
-
+		//z = z*z + c
+		z_rt = z_real;
+		
+		z_real = z_rt * z_rt - z_imag * z_imag + real;
+		z_imag = 2 * (z_rt * z_imag)           + imag;
 	}
-
-	mpf_clear(z_real);
-	mpf_clear(z_imag);
 	return 0;
 }
 
-inline void write_row(bitmap_image& img, const uint32_t width, const long double xmin, const long double xmax, const long double y, const uint32_t row) {
-	const comp deltaX((xmax - xmin) / width, 0);
-	comp z(xmin, y);
-	for (uint32_t i = 0; i < width; ++i) {
-		z += deltaX;
-		//img.set_pixel(i, row, jet_colormap[gray_value_of_sequence(z)]);
+void write_row(bitmap_image& img, const uint_fast32_t width, const mpf_class& xmin, const mpf_class& xmax, const mpf_class& y, const uint_fast32_t row) {
+	mpf_class delta_x{(xmax - xmin) / width, 64};
+
+	mpf_class c_real{xmin, xmin.get_prec()};
+
+	for (uint_fast32_t i = 0; i < width; ++i) {
+		c_real += delta_x;
+		const auto g_value = gray_value_of_sequence(c_real, y);
+		img.set_pixel(i, row, prism_colormap[g_value]);
 	}
 }
 
-inline void write_frame(const long double x_centre, const long double y_centre, const long double w, const std::string& out, uint32_t image_width, uint32_t image_height) {
-	static uint32_t n = 0;
+void write_frame(const mpf_class& x_centre, const mpf_class& y_centre, const mpf_class& w, const std::string& out, uint_fast32_t image_width, uint_fast32_t image_height) {
+	static uint_fast32_t n = 0;
 
-	const auto h = w * long double(image_height) / long double(image_width);
+	const mpf_class h{w * mpf_class(image_height) / (mpf_class)(image_width), w.get_prec()};
 
-	const auto x_min = x_centre - w / 2;
-	const auto x_max = x_centre + w / 2;
-	const auto y_min = y_centre - h / 2;
-	const auto y_max = y_centre + h / 2;
+	const mpf_class x_min{x_centre - w / 2, w.get_prec()};
+	const mpf_class x_max{x_centre + w / 2, w.get_prec()};
+	const mpf_class y_min{y_centre - h / 2, h.get_prec()};
+	const mpf_class y_max{y_centre + h / 2, h.get_prec()};
+
+	//std::cout << "\nHeight: " << h << "\nWidth: " << w << std::endl;
+
+	//std::cout << "\nImage width: " << image_width << " Image height: " << image_height << std::endl;
 
 	bitmap_image frame(image_width, image_height);
 
-	comp x(0, 0);
-
-	const auto deltaY = (y_max - y_min) / image_height;
+	const mpf_class delta_y{(y_max - y_min) / image_height, 64};
 	auto y = y_min;
 
-	for (uint32_t i = 0; i < image_height; ++i) {
+	for (uint_fast32_t i = 0; i < image_height; ++i) {
+		//std::cout << "\rRow " << i << "/" << image_height << std::endl;
+
 		write_row(frame, image_width, x_min, x_max, y, i);
-		y += deltaY;
+		y += delta_y;
 	}
 
 	frame.save_image(out);
