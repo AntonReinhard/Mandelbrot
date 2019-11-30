@@ -1,6 +1,6 @@
 #pragma once
 
-#include <SDL.h>
+#include <SDL2/SDL.h>
 
 const int LOGICAL_SCREEN_WIDTH = 1920;
 const int LOGICAL_SCREEN_HEIGHT = 1080;

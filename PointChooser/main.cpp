@@ -11,20 +11,20 @@ int main(int argc, char** argv)
 
 	std::cout.precision(16);
 
-	const long double zoom_factor = 0.5;
-	long double zoom = 3.5;
-	long double x_centre = -0.761574;
-	long double y_centre = -0.0847596;
+	const double zoom_factor = 0.5;
+	mpf_class zoom = 3.5;
+	mpf_class x_centre = -0.761574;
+	mpf_class y_centre = -0.0847596;
 
 	while (true) {
-		const auto w = zoom;
-		const auto h = w * 1080 / 1920;
-		const auto x_min = x_centre - w / 2;
-		const auto x_max = x_centre + w / 2;
-		const auto y_min = y_centre - h / 2;
-		const auto y_max = y_centre + h / 2;
+		const mpf_class w = zoom;
+		const mpf_class h = w * 1080 / 1920;
+		const mpf_class x_min = x_centre - w / 2;
+		const mpf_class x_max = x_centre + w / 2;
+		const mpf_class y_min = y_centre - h / 2;
+		const mpf_class y_max = y_centre + h / 2;
 
-		write_frame(x_centre, y_centre, w, "temp.bmp", 1920, 1080);
+		write_frame(x_centre, y_centre, w, "temp.bmp", 960, 540);
 
 		//wait a little so the image is ready
 		SDL_Delay(200);
@@ -56,8 +56,8 @@ int main(int argc, char** argv)
 					SDL_GetMouseState(&x, &y);
 
 					//recalculate the centre
-					x_centre = x_min + w / LOGICAL_SCREEN_WIDTH * x;
-					y_centre = y_min + h / LOGICAL_SCREEN_HEIGHT * y;
+					x_centre = x_min + w / double(LOGICAL_SCREEN_WIDTH) * double(x);
+					y_centre = y_min + h / double(LOGICAL_SCREEN_HEIGHT) * double(y);
 					zoom *= zoom_factor;
 					clicked = true;
 					std::cout << "x_centre: " << x_centre << std::endl;
